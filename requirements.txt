@@ -1,0 +1,10 @@
+diffusers
+torch
+transformers
+accelerate
+Pillow
+accelerate
+xformers
+sentencepiece
+safetensors
+gradio
