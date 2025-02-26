@@ -3,8 +3,8 @@ torch
 transformers
 accelerate
 Pillow
-accelerate
 xformers
 sentencepiece
 safetensors
 gradio
+gradio_client

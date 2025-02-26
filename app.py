@@ -10,34 +10,25 @@ import random
 import numpy as np
 import torch
 from PIL import Image
-
+from gradio_client import Client
 import gradio as gr
 import spaces
-from diffusers import AutoPipelineForText2Image
-from diffusers.utils import load_image
 from huggingface_hub import hf_hub_download, login
 
 from pipeline_flux_ipa import FluxPipeline
 from transformer_flux import FluxTransformer2DModel
-from attention_processor import IPAFluxAttnProcessor2_0  # noqa: F401
-from transformers import AutoProcessor, SiglipVisionModel  # noqa: F401
+from attention_processor import IPAFluxAttnProcessor2_0  
+from transformers import AutoProcessor, SiglipVisionModel  
 from infer_flux_ipa_siglip import MLPProjModel, IPAdapter
 
 # Device and torch data type settings
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+token = os.getenv("HF_TOKEN")
+login(token=token)
 
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1024
-
-# Login to Hugging Face with token from environment variable
-token = os.environ.get("HF_TOKEN")
-login(token=token)
-
-# Setup the stable-diffusion pipeline and load IP Adapter
-pipe = AutoPipelineForText2Image.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=dtype)
-pipe.load_ip_adapter("h94/IP-Adapter", subfolder="sdxl_models", weight_name="ip-adapter_sdxl.bin")
-pipe.to(device)
 
 def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
     """
@@ -54,68 +45,11 @@ def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
         seed = random.randint(0, 2000)
     return seed
 
-@spaces.GPU()
-def create_image(
-    image_pil,
-    prompt: str,
-    n_prompt: str,
-    scale,
-    control_scale,
-    guidance_scale: float,
-    num_inference_steps: int,
-    seed: int,
-    target: str = "Load only style blocks",
-):
-    """
-    Creates an image using the Stable-Diffusion pipeline with IP Adapter.
-
-    Args:
-        image_pil: The input style image.
-        prompt (str): The prompt text.
-        n_prompt (str): The negative prompt.
-        scale: The image scale value.
-        control_scale: The control scale value for IP Adapter.
-        guidance_scale (float): Guidance scale for generation.
-        num_inference_steps (int): Number of inference steps.
-        seed (int): The seed value.
-        target (str): Mode selection for IP Adapter scaling.
-
-    Returns:
-        Generated image.
-    """
-    # Configure IP Adapter scale based on target
-    if target != "Load original IP-Adapter":
-        if target == "Load only style blocks":
-            scale = {"up": {"block_0": [0.0, control_scale, 0.0]}}
-        elif target == "Load only layout blocks":
-            scale = {"down": {"block_2": [0.0, control_scale]}}
-        elif target == "Load style+layout block":
-            scale = {
-                "down": {"block_2": [0.0, control_scale]},
-                "up": {"block_0": [0.0, control_scale, 0.0]},
-            }
-        pipe.set_ip_adapter_scale(scale)
-
-    style_image = load_image(image_pil)
-    generator = torch.Generator().manual_seed(randomize_seed_fn(seed, True))
-
-    image = pipe(
-        prompt=prompt,
-        ip_adapter_image=style_image,
-        negative_prompt=n_prompt,
-        guidance_scale=guidance_scale,
-        num_inference_steps=num_inference_steps,
-        generator=generator,
-    ).images[0]
-    
-    return image
-
 # Download model assets and initialize IP Adapter pipeline
 image_encoder_path = "google/siglip-so400m-patch14-384"
-ipadapter_path = hf_hub_download(repo_id="InstantX/FLUX.1-dev-IP-Adapter", filename="ip-adapter.bin")
-
-transformer = FluxTransformer2DModel.from_pretrained("black-forest-labs/FLUX.1-dev", subfolder="transformer", torch_dtype=torch.bfloat16)
+transformer = FluxTransformer2DModel.from_pretrained("black-forest-labs/FLUX.1-dev", subfolder="transformer", torch_dtype=torch.bfloat16, token=token)
 fluxPipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", transformer=transformer, torch_dtype=torch.bfloat16)
+ipadapter_path = hf_hub_download(repo_id="InstantX/FLUX.1-dev-IP-Adapter", filename="ip-adapter.bin")
 ip_model = IPAdapter(fluxPipe, image_encoder_path, ipadapter_path, device="cuda", num_tokens=128)
 
 def resize_img(image: Image.Image, max_size: int = 1024) -> Image.Image:
@@ -135,6 +69,33 @@ def resize_img(image: Image.Image, max_size: int = 1024) -> Image.Image:
     new_height = int(height * scaling_factor)
     return image.resize((new_width, new_height), Image.LANCZOS)
 
+def create_image_sdxl(
+    image_pil,
+    prompt: str,
+    n_prompt: str,
+    scale,
+    control_scale,
+    guidance_scale: float,
+    num_inference_steps: int,
+    seed: int,
+    target: str = "Load only style blocks",
+):
+    client = Client("Hatman/InstantStyle")
+    result = client.predict(
+            image_pil=image_pil,
+            prompt=prompt,
+            n_prompt=n_prompt,
+            scale=1,
+            control_scale=control_scale,
+            guidance_scale=guidance_scale,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+            target=target,
+            api_name="/create_image"
+    )
+    
+    return result
+    
 @spaces.GPU
 def process_image(
     image,
@@ -187,11 +148,13 @@ def process_image(
 
 # Content for Gradio interface
 title = r"""
-<h1>InstantStyle</h1>
+<h1>InstantStyle-Flux</h1>
 """
+
 description = r"""
 <p>Two different models using the IP Adapter to preserve style across text-to-image generation.</p>
 """
+
 article = r"""
 ---
 ```bibtex
@@ -341,7 +304,7 @@ with gr.Blocks() as demo:
             queue=False,
             api_name=False,
         ).then(
-            fn=create_image,
+            fn=create_image_sdxl,
             inputs=[
                 image_pil,
                 prompt_textbox,
