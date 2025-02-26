@@ -1,10 +1,8 @@
+accelerate
 diffusers
 torch
 transformers
-accelerate
-Pillow
 xformers
 sentencepiece
 safetensors
-gradio
 gradio_client

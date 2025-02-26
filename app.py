@@ -1,100 +1,55 @@
-"""
-InstantStyle Application
-
-This application uses two models with an IP Adapter for style-preserving text-to-image generation.
-It supports both FLUX and SDXL modes in separate tabs.
-"""
-
-import os
-import random
-import numpy as np
-import torch
-from PIL import Image
-from gradio_client import Client
 import gradio as gr
+import numpy as np
+import random
+import torch
 import spaces
-from huggingface_hub import hf_hub_download, login
-
+from PIL import Image
+import os
+import torch.cuda
+import gc
+from gradio_client import Client, file
 from pipeline_flux_ipa import FluxPipeline
 from transformer_flux import FluxTransformer2DModel
-from attention_processor import IPAFluxAttnProcessor2_0  
-from transformers import AutoProcessor, SiglipVisionModel  
+from attention_processor import IPAFluxAttnProcessor2_0
+from transformers import AutoProcessor, SiglipVisionModel
 from infer_flux_ipa_siglip import MLPProjModel, IPAdapter
+from huggingface_hub import hf_hub_download
 
-# Device and torch data type settings
-device = "cuda" if torch.cuda.is_available() else "cpu"
-dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-token = os.getenv("HF_TOKEN")
-login(token=token)
-
+# Constants
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1024
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
-    """
-    Randomizes the seed if randomize_seed is True.
-    
-    Args:
-        seed (int): The original seed.
-        randomize_seed (bool): Whether to randomize the seed.
-
-    Returns:
-        int: The randomized (or original) seed.
-    """
-    if randomize_seed:
-        seed = random.randint(0, 2000)
-    return seed
-
-# Download model assets and initialize IP Adapter pipeline
 image_encoder_path = "google/siglip-so400m-patch14-384"
-transformer = FluxTransformer2DModel.from_pretrained("black-forest-labs/FLUX.1-dev", subfolder="transformer", torch_dtype=torch.bfloat16, token=token)
-fluxPipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", transformer=transformer, torch_dtype=torch.bfloat16)
 ipadapter_path = hf_hub_download(repo_id="InstantX/FLUX.1-dev-IP-Adapter", filename="ip-adapter.bin")
-ip_model = IPAdapter(fluxPipe, image_encoder_path, ipadapter_path, device="cuda", num_tokens=128)
 
-def resize_img(image: Image.Image, max_size: int = 1024) -> Image.Image:
-    """
-    Resizes the given image while maintaining its aspect ratio.
-    
-    Args:
-        image (Image.Image): The input PIL image.
-        max_size (int): Maximum size for width or height.
+transformer = FluxTransformer2DModel.from_pretrained(
+    "black-forest-labs/FLUX.1-dev", 
+    subfolder="transformer", 
+    torch_dtype=torch.bfloat16
+)
 
-    Returns:
-        Image.Image: The resized image.
-    """
+pipe = FluxPipeline.from_pretrained(
+    "black-forest-labs/FLUX.1-dev", 
+    transformer=transformer, 
+    torch_dtype=torch.bfloat16
+)
+
+ip_model = IPAdapter(pipe, image_encoder_path, ipadapter_path, device="cuda", num_tokens=128)
+
+def clear_gpu_memory():
+    """Clear GPU memory and cache"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+        gc.collect()
+
+def resize_img(image, max_size=1024):
     width, height = image.size
     scaling_factor = min(max_size / width, max_size / height)
     new_width = int(width * scaling_factor)
     new_height = int(height * scaling_factor)
     return image.resize((new_width, new_height), Image.LANCZOS)
-
-def create_image_sdxl(
-    image_pil,
-    prompt: str,
-    n_prompt: str,
-    scale,
-    control_scale,
-    guidance_scale: float,
-    num_inference_steps: int,
-    seed: int,
-    target: str = "Load only style blocks",
-):
-    client = Client("Hatman/InstantStyle")
-    result = client.predict(
-            image_pil=image_pil,
-            prompt=prompt,
-            n_prompt=n_prompt,
-            scale=1,
-            control_scale=control_scale,
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-            seed=seed,
-            target=target,
-            api_name="/create_image"
-    )
-    
-    return result
     
 @spaces.GPU
 def process_image(
@@ -107,22 +62,7 @@ def process_image(
     height: int,
     progress=gr.Progress(track_tqdm=True),
 ):
-    """
-    Processes the input image and generates a styled image using IP Adapter model.
-    
-    Args:
-        image: The input image (as PIL Image or array).
-        prompt (str): The prompt text.
-        scale: The scale value.
-        seed (int): The seed value.
-        randomize_seed (bool): Whether to randomize the seed.
-        width (int): Output image width.
-        height (int): Output image height.
-        progress: Gradio progress tracker.
-
-    Returns:
-        Tuple containing the generated image and the seed used.
-    """
+    clear_gpu_memory()
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
     
@@ -143,16 +83,82 @@ def process_image(
         height=height,
         seed=seed
     )
-    
+    clear_gpu_memory()
     return result[0], seed
 
-# Content for Gradio interface
+def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
+    if randomize_seed:
+        seed = random.randint(0, 2000)
+    return seed
+    
+def create_image_sdxl(
+    image_pil,
+    prompt: str,
+    n_prompt: str,
+    scale,
+    control_scale,
+    guidance_scale: float,
+    num_inference_steps: int,
+    seed: int,
+    target: str = "Load only style blocks",
+):
+    try:
+        image_pil.save("./tmp.png", format="PNG")
+        client = Client("Hatman/InstantStyle")
+        result = client.predict(
+            image_pil=file("./tmp.png"),
+            prompt=prompt,
+            n_prompt=n_prompt,
+            scale=1,
+            control_scale=control_scale,
+            guidance_scale=guidance_scale,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+            target=target,
+            api_name="/create_image"
+        )
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error in create_image_sdxl: {str(e)}")
+        return None
+    
+# UI CSS
+css = """
+::-webkit-scrollbar { 
+    display: none; 
+    } 
+
+#component-0 { 
+    max-width: 900px; 
+    margin: 0 auto; 
+    } 
+
+.center-markdown { 
+    text-align: center !important; 
+    display: flex !important; 
+    justify-content: center !important; 
+    width: 100% !important; 
+    } 
+
+.gradio-row { 
+    display: flex !important; 
+    gap: 1rem !important; 
+    flex-wrap: nowrap !important; 
+    } 
+
+.gradio-column { 
+    flex: 1 1 0 !important; 
+    min-width: 0 !important; 
+    }
+"""
 title = r"""
-<h1>InstantStyle-Flux</h1>
+<h1>InstantStyle Flux & SDXL</h1>
 """
 
 description = r"""
-<p>Two different models using the IP Adapter to preserve style across text-to-image generation.</p>
+<p>Two different models using the IP Adapter with InstantStyle to preserve style across text-to-image generation.</p>
 """
 
 article = r"""
@@ -166,28 +172,27 @@ article = r"""
 }
 ```
 """
-with gr.Blocks() as demo: 
-    # Custom CSS for layout and appearance 
-    gr.HTML(""" <style> ::-webkit-scrollbar { display: none; } #component-0 { max-width: 900px; margin: 0 auto; } 
-            .center-markdown { text-align: center !important; display: flex !important; justify-content: center !important; width: 100% !important; } .gradio-row { display: flex !important; gap: 1rem !important; flex-wrap: nowrap !important; } 
-            .gradio-column { flex: 1 1 0 !important; min-width: 0 !important; } </style>""")
-    # Display title and description in center-aligned Markdown
+
+with gr.Blocks(css=css) as demo:
+    
     gr.Markdown(title, elem_classes="center-markdown")
     gr.Markdown(description, elem_classes="center-markdown")
-
-    # FLUX Tab
+    
     with gr.Tab("FLUX"):
         with gr.Row():
             with gr.Column(scale=1, min_width=300):
-                input_image = gr.Image(label="Input Image", type="pil")
-                scale_slider = gr.Slider(
+                input_image = gr.Image(
+                    label="Input Image",
+                    type="pil"
+                )
+                scale = gr.Slider(
                     label="Image Scale",
                     minimum=0.0,
                     maximum=1.0,
                     step=0.1,
                     value=0.7,
                 )
-                prompt_input = gr.Text(
+                prompt = gr.Text(
                     label="Prompt",
                     max_lines=1,
                     placeholder="Enter your prompt",
@@ -195,48 +200,49 @@ with gr.Blocks() as demo:
                 run_button = gr.Button("Generate", variant="primary")
             
             with gr.Column(scale=1, min_width=300):
-                result_image = gr.Image(label="Result")
+                result = gr.Image(label="Result")
         
         with gr.Accordion("Advanced Settings", open=False):
-            seed_slider = gr.Slider(
+            seed = gr.Slider(
                 label="Seed",
                 minimum=0,
                 maximum=MAX_SEED,
                 step=1,
                 value=42,
             )
-            randomize_seed_checkbox = gr.Checkbox(label="Randomize seed", value=True)
+            
+            randomize_seed = gr.Checkbox(label="Randomize seed", value=True)
+            
             with gr.Row():
-                width_slider = gr.Slider(
+                width = gr.Slider(
                     label="Width",
                     minimum=256,
                     maximum=MAX_IMAGE_SIZE,
                     step=32,
-                    value=1024,
+                    value=512,
                 )
-                height_slider = gr.Slider(
+                
+                height = gr.Slider(
                     label="Height",
                     minimum=256,
                     maximum=MAX_IMAGE_SIZE,
                     step=32,
-                    value=1024,
+                    value=512,
                 )
-
-        run_button.click(
-            fn=process_image,
-            inputs=[
-                input_image,
-                prompt_input,
-                scale_slider,
-                seed_slider,
-                randomize_seed_checkbox,
-                width_slider,
-                height_slider,
-            ],
-            outputs=[result_image, seed_slider],
-        )
-
-    # SDXL Tab
+    
+    run_button.click(
+        fn=process_image,
+        inputs=[
+            input_image,
+            prompt,
+            scale,
+            seed,
+            randomize_seed,
+            width,
+            height,
+        ],
+        outputs=[result, seed],
+    )
     with gr.Tab("SDXL"):
         with gr.Row():
             with gr.Column():
@@ -248,7 +254,7 @@ with gr.Blocks() as demo:
                 )
                 prompt_textbox = gr.Textbox(
                     label="Prompt",
-                    value="a cat, masterpiece, best quality, high quality"
+                    value="a dog, masterpiece, best quality, high quality"
                 )
                 scale_slider_sdxl = gr.Slider(
                     minimum=0,
@@ -292,7 +298,7 @@ with gr.Blocks() as demo:
                         label="Seed Value"
                     )
                     randomize_seed_checkbox_sdxl = gr.Checkbox(label="Randomize seed", value=True)
-                generate_button = gr.Button("Generate Image")
+                generate_button = gr.Button("Generate Image", variant="primary")
         
             with gr.Column():
                 generated_image = gr.Image(label="Generated Image", show_label=False)
@@ -321,5 +327,9 @@ with gr.Blocks() as demo:
 
     gr.Markdown(article)
 
-if __name__ == "main": 
-    demo.launch()
+if __name__ == "__main__":  
+    demo.launch(
+        share=True,  
+        show_error=True,  
+        quiet=False
+    )
