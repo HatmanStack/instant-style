@@ -17,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Install ruff
         run: pip install ruff
@@ -37,15 +37,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          pip install pytest pytest-cov pillow numpy
+        run: pip install pytest pytest-cov pillow numpy
 
       - name: Run tests
-        run: |
-          pytest tests/test_exceptions.py tests/test_metrics.py tests/test_validation.py -v --tb=short
+        run: pytest tests/test_exceptions.py tests/test_metrics.py tests/test_validation.py -v --tb=short
 
   typecheck:
     name: Type Check
@@ -56,12 +54,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          pip install mypy pillow types-Pillow
+        run: pip install mypy pillow types-Pillow
 
       - name: Run mypy on core modules
-        run: |
-          mypy exceptions.py validation.py metrics.py logging_config.py --ignore-missing-imports
+        run: mypy exceptions.py validation.py metrics.py logging_config.py --ignore-missing-imports
