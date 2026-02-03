@@ -2,13 +2,13 @@
 
 import numpy as np
 import pytest
-import torch
 from PIL import Image
 
 
 @pytest.fixture
 def device() -> str:
     """Get the available device for testing."""
+    torch = pytest.importorskip("torch")
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -40,6 +40,7 @@ def large_image() -> Image.Image:
 
 
 @pytest.fixture
-def mock_tensor() -> torch.Tensor:
+def mock_tensor():
     """Create a mock tensor for testing."""
+    torch = pytest.importorskip("torch")
     return torch.randn(1, 128, 3072)

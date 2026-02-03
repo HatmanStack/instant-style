@@ -39,7 +39,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest pytest-cov pillow
+          pip install pytest pytest-cov pillow numpy
 
       - name: Run tests
         run: |
