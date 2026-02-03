@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -81,17 +81,19 @@ class FluxSingleTransformerBlock(nn.Module):
         self,
         hidden_states: torch.FloatTensor,
         temb: torch.FloatTensor,
-        image_emb=None,
-        image_rotary_emb=None,
-    ):
+        image_emb: Optional[torch.FloatTensor] = None,
+        image_rotary_emb: Optional[torch.Tensor] = None,
+        scale: Optional[float] = None,
+    ) -> torch.FloatTensor:
         residual = hidden_states
         norm_hidden_states, gate = self.norm(hidden_states, emb=temb)
         mlp_hidden_states = self.act_mlp(self.proj_mlp(norm_hidden_states))
-        
+
         attn_output = self.attn(
             hidden_states=norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
             image_emb=image_emb,
+            scale=scale,
         )
 
         hidden_states = torch.cat([attn_output, mlp_hidden_states], dim=2)
@@ -162,21 +164,23 @@ class FluxTransformerBlock(nn.Module):
         hidden_states: torch.FloatTensor,
         encoder_hidden_states: torch.FloatTensor,
         temb: torch.FloatTensor,
-        image_emb=None,
-        image_rotary_emb=None,
-    ):
+        image_emb: Optional[torch.FloatTensor] = None,
+        image_rotary_emb: Optional[torch.Tensor] = None,
+        scale: Optional[float] = None,
+    ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
         norm_hidden_states, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.norm1(hidden_states, emb=temb)
 
         norm_encoder_hidden_states, c_gate_msa, c_shift_mlp, c_scale_mlp, c_gate_mlp = self.norm1_context(
             encoder_hidden_states, emb=temb
         )
-        
+
         # Attention.
         attn_output, context_attn_output = self.attn(
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
             image_emb=image_emb,
+            scale=scale,
         )
 
         # Process attention outputs for the `hidden_states`.
@@ -390,17 +394,18 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
     def forward(
         self,
         hidden_states: torch.Tensor,
-        encoder_hidden_states: torch.Tensor = None,
-        image_emb: torch.FloatTensor = None,
-        pooled_projections: torch.Tensor = None,
-        timestep: torch.LongTensor = None,
-        img_ids: torch.Tensor = None,
-        txt_ids: torch.Tensor = None,
-        guidance: torch.Tensor = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        image_emb: Optional[torch.FloatTensor] = None,
+        pooled_projections: Optional[torch.Tensor] = None,
+        timestep: Optional[torch.LongTensor] = None,
+        img_ids: Optional[torch.Tensor] = None,
+        txt_ids: Optional[torch.Tensor] = None,
+        guidance: Optional[torch.Tensor] = None,
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
-        controlnet_block_samples=None,
-        controlnet_single_block_samples=None,
+        controlnet_block_samples: Optional[List[torch.Tensor]] = None,
+        controlnet_single_block_samples: Optional[List[torch.Tensor]] = None,
         return_dict: bool = True,
+        scale: Optional[float] = None,
     ) -> Union[torch.FloatTensor, Transformer2DModelOutput]:
         """
         The [`FluxTransformer2DModel`] forward method.
@@ -493,6 +498,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                     temb,
                     image_emb,
                     image_rotary_emb,
+                    scale,
                     **ckpt_kwargs,
                 )
 
@@ -503,6 +509,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                     temb=temb,
                     image_emb=image_emb,
                     image_rotary_emb=image_rotary_emb,
+                    scale=scale,
                 )
                         
             # controlnet residual
@@ -532,6 +539,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                     temb,
                     image_emb,
                     image_rotary_emb,
+                    scale,
                     **ckpt_kwargs,
                 )
 
@@ -541,6 +549,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                     temb=temb,
                     image_emb=image_emb,
                     image_rotary_emb=image_rotary_emb,
+                    scale=scale,
                 )
                         
             # controlnet residual

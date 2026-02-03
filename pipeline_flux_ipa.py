@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -69,12 +69,12 @@ EXAMPLE_DOC_STRING = """
 
 
 def calculate_shift(
-    image_seq_len,
+    image_seq_len: int,
     base_seq_len: int = 256,
     max_seq_len: int = 4096,
     base_shift: float = 0.5,
     max_shift: float = 1.16,
-):
+) -> float:
     m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
     b = base_shift - m * base_seq_len
     mu = image_seq_len * m + b
@@ -83,13 +83,13 @@ def calculate_shift(
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
 def retrieve_timesteps(
-    scheduler,
+    scheduler: Any,
     num_inference_steps: Optional[int] = None,
     device: Optional[Union[str, torch.device]] = None,
     timesteps: Optional[List[int]] = None,
     sigmas: Optional[List[float]] = None,
-    **kwargs,
-):
+    **kwargs: Any,
+) -> Tuple[torch.Tensor, int]:
     """
     Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
     custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
@@ -209,7 +209,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         max_sequence_length: int = 512,
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
-    ):
+    ) -> torch.FloatTensor:
         device = device or self._execution_device
         dtype = dtype or self.text_encoder.dtype
 
@@ -253,7 +253,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         prompt: Union[str, List[str]],
         num_images_per_prompt: int = 1,
         device: Optional[torch.device] = None,
-    ):
+    ) -> torch.FloatTensor:
         device = device or self._execution_device
 
         prompt = [prompt] if isinstance(prompt, str) else prompt
@@ -299,7 +299,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         max_sequence_length: int = 512,
         lora_scale: Optional[float] = None,
-    ):
+    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.Tensor]:
         r"""
 
         Args:
@@ -378,7 +378,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         max_sequence_length: int = 512,
         lora_scale: Optional[float] = None,
-    ):
+    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.Tensor]:
         r"""
 
         Args:
@@ -457,23 +457,20 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
             )
             prompt_embeds_list.append(prompt_embeds)
         prompt_embeds = torch.concat(prompt_embeds_list, dim=1)
-            
-        #print(prompt_embeds.shape, pooled_prompt_embeds.shape, text_ids.shape)
-        # torch.Size([1, 512*num_prompt, 4096]) torch.Size([1, 768]) torch.Size([512, 3])
-                
+
         return prompt_embeds, pooled_prompt_embeds, text_ids
     
     def check_inputs(
         self,
-        prompt,
-        prompt_2,
-        height,
-        width,
-        prompt_embeds=None,
-        pooled_prompt_embeds=None,
-        callback_on_step_end_tensor_inputs=None,
-        max_sequence_length=None,
-    ):
+        prompt: Optional[Union[str, List[str]]],
+        prompt_2: Optional[Union[str, List[str]]],
+        height: int,
+        width: int,
+        prompt_embeds: Optional[torch.FloatTensor] = None,
+        pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
+        callback_on_step_end_tensor_inputs: Optional[List[str]] = None,
+        max_sequence_length: Optional[int] = None,
+    ) -> None:
         if height % 8 != 0 or width % 8 != 0:
             raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
 
@@ -512,9 +509,9 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
             raise ValueError(f"`max_sequence_length` cannot be greater than 512 but is {max_sequence_length}")
 
     @staticmethod
-    def _prepare_latent_image_ids(batch_size, height, width, device, dtype):
-        # print(batch_size, height, width)
-        # 1 96 160
+    def _prepare_latent_image_ids(
+        batch_size: int, height: int, width: int, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         latent_image_ids = torch.zeros(height // 2, width // 2, 3)
         latent_image_ids[..., 1] = latent_image_ids[..., 1] + torch.arange(height // 2)[:, None]
         latent_image_ids[..., 2] = latent_image_ids[..., 2] + torch.arange(width // 2)[None, :]
@@ -528,7 +525,9 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         return latent_image_ids.to(device=device, dtype=dtype)
 
     @staticmethod
-    def _pack_latents(latents, batch_size, num_channels_latents, height, width):
+    def _pack_latents(
+        latents: torch.Tensor, batch_size: int, num_channels_latents: int, height: int, width: int
+    ) -> torch.Tensor:
         latents = latents.view(batch_size, num_channels_latents, height // 2, 2, width // 2, 2)
         latents = latents.permute(0, 2, 4, 1, 3, 5)
         latents = latents.reshape(batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
@@ -536,7 +535,9 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         return latents
 
     @staticmethod
-    def _unpack_latents(latents, height, width, vae_scale_factor):
+    def _unpack_latents(
+        latents: torch.Tensor, height: int, width: int, vae_scale_factor: int
+    ) -> torch.Tensor:
         batch_size, num_patches, channels = latents.shape
 
         height = height // vae_scale_factor
@@ -549,21 +550,21 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
 
         return latents
 
-    def enable_vae_slicing(self):
+    def enable_vae_slicing(self) -> None:
         r"""
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
         compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
         """
         self.vae.enable_slicing()
 
-    def disable_vae_slicing(self):
+    def disable_vae_slicing(self) -> None:
         r"""
         Disable sliced VAE decoding. If `enable_vae_slicing` was previously enabled, this method will go back to
         computing decoding in one step.
         """
         self.vae.disable_slicing()
 
-    def enable_vae_tiling(self):
+    def enable_vae_tiling(self) -> None:
         r"""
         Enable tiled VAE decoding. When this option is enabled, the VAE will split the input tensor into tiles to
         compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
@@ -571,7 +572,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         """
         self.vae.enable_tiling()
 
-    def disable_vae_tiling(self):
+    def disable_vae_tiling(self) -> None:
         r"""
         Disable tiled VAE decoding. If `enable_vae_tiling` was previously enabled, this method will go back to
         computing decoding in one step.
@@ -580,15 +581,15 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
 
     def prepare_latents(
         self,
-        batch_size,
-        num_channels_latents,
-        height,
-        width,
-        dtype,
-        device,
-        generator,
-        latents=None,
-    ):
+        batch_size: int,
+        num_channels_latents: int,
+        height: int,
+        width: int,
+        dtype: torch.dtype,
+        device: torch.device,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]],
+        latents: Optional[torch.FloatTensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         height = 2 * (int(height) // self.vae_scale_factor)
         width = 2 * (int(width) // self.vae_scale_factor)
 
@@ -612,19 +613,19 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         return latents, latent_image_ids
 
     @property
-    def guidance_scale(self):
+    def guidance_scale(self) -> float:
         return self._guidance_scale
 
     @property
-    def joint_attention_kwargs(self):
+    def joint_attention_kwargs(self) -> Optional[Dict[str, Any]]:
         return self._joint_attention_kwargs
 
     @property
-    def num_timesteps(self):
+    def num_timesteps(self) -> int:
         return self._num_timesteps
 
     @property
-    def interrupt(self):
+    def interrupt(self) -> bool:
         return self._interrupt
 
     @torch.no_grad()
@@ -636,7 +637,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 28,
-        timesteps: List[int] = None,
+        timesteps: Optional[List[int]] = None,
         guidance_scale: float = 3.5,
         num_images_per_prompt: Optional[int] = 1,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
@@ -650,7 +651,8 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         max_sequence_length: int = 512,
-    ):
+        scale: Optional[float] = None,
+    ) -> Union[FluxPipelineOutput, Tuple[List[Image.Image]]]:
         r"""
         Function invoked when calling the pipeline for generation.
 
@@ -829,6 +831,7 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
                     img_ids=latent_image_ids,
                     joint_attention_kwargs=self.joint_attention_kwargs,
                     return_dict=False,
+                    scale=scale,
                 )[0]
 
                 # compute the previous noisy sample x_t -> x_t-1
