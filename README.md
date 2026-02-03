@@ -19,6 +19,8 @@
   <p align="center"><b>Preserve Style Across text-to-image Generation<br> <a href="https://hatman-instantstyle-flux-sdxl.hf.space"> InstantStyle » </a> </b> </p>
 </p>
 
+** THIS REPO IS NO LONGER MAINTAINED ** 
+
 </div>
 
 ## 🌟 Features
