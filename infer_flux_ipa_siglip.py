@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import List, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -10,7 +9,7 @@ from PIL import Image
 from transformers import AutoProcessor, SiglipVisionModel
 
 from attention_processor import IPAFluxAttnProcessor2_0
-from exceptions import ModelLoadError, ImageProcessingError
+from exceptions import ImageProcessingError, ModelLoadError
 from metrics import timed
 
 logger = logging.getLogger("instant_style.ip_adapter")
@@ -20,7 +19,7 @@ def resize_img(
     input_image: Image.Image,
     max_side: int = 1280,
     min_side: int = 1024,
-    size: Optional[tuple[int, int]] = None,
+    size: tuple[int, int] | None = None,
     pad_to_max_side: bool = False,
     mode: int = Image.BILINEAR,
     base_pixel_number: int = 64,
@@ -215,8 +214,8 @@ class IPAdapter:
     @timed
     def get_image_embeds(
         self,
-        pil_image: Optional[Union[Image.Image, List[Image.Image]]] = None,
-        clip_image_embeds: Optional[torch.Tensor] = None,
+        pil_image: Image.Image | list[Image.Image] | None = None,
+        clip_image_embeds: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Extract image embeddings using the image encoder.
 
@@ -255,16 +254,16 @@ class IPAdapter:
     @timed
     def generate(
         self,
-        pil_image: Optional[Union[Image.Image, List[Image.Image]]] = None,
-        clip_image_embeds: Optional[torch.Tensor] = None,
-        prompt: Optional[str] = None,
+        pil_image: Image.Image | list[Image.Image] | None = None,
+        clip_image_embeds: torch.Tensor | None = None,
+        prompt: str | None = None,
         scale: float = 1.0,
         num_samples: int = 1,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         guidance_scale: float = 3.5,
         num_inference_steps: int = 24,
         **kwargs: object,
-    ) -> List[Image.Image]:
+    ) -> list[Image.Image]:
         """Generate images using IP-Adapter style transfer.
 
         Args:
@@ -321,7 +320,9 @@ if __name__ == "__main__":
         model_path, subfolder="transformer", torch_dtype=torch.bfloat16
     )
 
-    pipe = FluxPipeline.from_pretrained(model_path, transformer=transformer, torch_dtype=torch.bfloat16)
+    pipe = FluxPipeline.from_pretrained(
+        model_path, transformer=transformer, torch_dtype=torch.bfloat16
+    )
 
     ip_model = IPAdapter(pipe, image_encoder_path, ipadapter_path, device="cuda", num_tokens=128)
 

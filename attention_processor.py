@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.models.normalization import RMSNorm
-from typing import Optional, Tuple, Union
 
 
 class IPAFluxAttnProcessor2_0(nn.Module):
@@ -13,7 +12,7 @@ class IPAFluxAttnProcessor2_0(nn.Module):
     def __init__(
         self,
         hidden_size: int,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         scale: float = 1.0,
         num_tokens: int = 4,
     ) -> None:
@@ -33,13 +32,13 @@ class IPAFluxAttnProcessor2_0(nn.Module):
         self,
         attn: nn.Module,
         hidden_states: torch.FloatTensor,
-        image_emb: Optional[torch.FloatTensor],
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        image_rotary_emb: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        scale: Optional[float] = None,
-    ) -> Union[torch.FloatTensor, Tuple[torch.FloatTensor, torch.FloatTensor]]:
+        image_emb: torch.FloatTensor | None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        image_rotary_emb: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        scale: float | None = None,
+    ) -> torch.FloatTensor | tuple[torch.FloatTensor, torch.FloatTensor]:
         """Process attention with optional IP-Adapter image embeddings.
 
         Args:
@@ -80,7 +79,7 @@ class IPAFluxAttnProcessor2_0(nn.Module):
         if attn.norm_k is not None:
             key = attn.norm_k(key)
 
-        ip_hidden_states: Optional[torch.Tensor] = None
+        ip_hidden_states: torch.Tensor | None = None
         if image_emb is not None:
             # `ip-adapter` projections
             ip_hidden_states_input = image_emb
@@ -127,7 +126,9 @@ class IPAFluxAttnProcessor2_0(nn.Module):
             ).transpose(1, 2)
 
             if attn.norm_added_q is not None:
-                encoder_hidden_states_query_proj = attn.norm_added_q(encoder_hidden_states_query_proj)
+                encoder_hidden_states_query_proj = attn.norm_added_q(
+                    encoder_hidden_states_query_proj
+                )
             if attn.norm_added_k is not None:
                 encoder_hidden_states_key_proj = attn.norm_added_k(encoder_hidden_states_key_proj)
 
@@ -142,7 +143,9 @@ class IPAFluxAttnProcessor2_0(nn.Module):
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        hidden_states = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0, is_causal=False)
+        hidden_states = F.scaled_dot_product_attention(
+            query, key, value, dropout_p=0.0, is_causal=False
+        )
 
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)

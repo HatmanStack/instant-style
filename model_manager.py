@@ -35,9 +35,9 @@ class ModelManager:
             return
         self._initialized = True
         self._models_lock = threading.Lock()
-        self._transformer: Optional[torch.nn.Module] = None
-        self._pipe: Optional[object] = None
-        self._ip_model: Optional[object] = None
+        self._transformer: torch.nn.Module | None = None
+        self._pipe: object | None = None
+        self._ip_model: object | None = None
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"ModelManager initialized with device: {self._device}")
 
@@ -150,7 +150,7 @@ class ModelManager:
 
 
 # Global singleton instance
-_model_manager: Optional[ModelManager] = None
+_model_manager: ModelManager | None = None
 
 
 def get_model_manager() -> ModelManager:

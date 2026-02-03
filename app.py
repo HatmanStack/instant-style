@@ -5,7 +5,6 @@ import logging
 import os
 import random
 import tempfile
-from typing import Optional, Tuple, Union
 
 import gradio as gr
 import numpy as np
@@ -24,7 +23,7 @@ from exceptions import (
 from logging_config import setup_logging
 from metrics import timed
 from model_manager import get_model_manager
-from validation import validate_inputs, MAX_IMAGE_SIZE, MIN_IMAGE_SIZE
+from validation import MAX_IMAGE_SIZE, MIN_IMAGE_SIZE, validate_inputs
 
 # Initialize logging
 logger = setup_logging(logging.INFO)
@@ -54,7 +53,7 @@ def resize_img(image: Image.Image, max_size: int = 1024) -> Image.Image:
 @spaces.GPU
 @timed
 def process_image(
-    image: Optional[Union[Image.Image, np.ndarray]],
+    image: Image.Image | np.ndarray | None,
     prompt: str,
     scale: float,
     seed: int,
@@ -62,7 +61,7 @@ def process_image(
     width: int,
     height: int,
     progress: gr.Progress = gr.Progress(track_tqdm=True),
-) -> Tuple[Optional[Image.Image], int]:
+) -> tuple[Image.Image | None, int]:
     """Process an image using IP-Adapter style transfer.
 
     Args:
@@ -98,7 +97,7 @@ def process_image(
         validate_inputs(image, prompt, scale, width, height)
     except ValidationError as e:
         logger.warning(f"Validation error: {e}")
-        raise gr.Error(str(e))
+        raise gr.Error(str(e)) from None
 
     image = resize_img(image)
 
@@ -120,21 +119,21 @@ def process_image(
 
     except ModelLoadError as e:
         logger.error(f"Model loading failed: {e}", exc_info=True)
-        raise gr.Error("Failed to load model. Please try again later.")
+        raise gr.Error("Failed to load model. Please try again later.") from None
     except (ImageProcessingError, InferenceError) as e:
         logger.error(f"Processing error: {e}", exc_info=True)
-        raise gr.Error(f"Image processing failed: {e}")
+        raise gr.Error(f"Image processing failed: {e}") from None
     except torch.cuda.OutOfMemoryError:
         logger.error("GPU out of memory", exc_info=True)
         clear_gpu_memory()
-        raise gr.Error("GPU out of memory. Try reducing image size or try again.")
+        raise gr.Error("GPU out of memory. Try reducing image size or try again.") from None
     except (ConnectionError, TimeoutError) as e:
         logger.error(f"Connection error: {e}", exc_info=True)
-        raise gr.Error("Failed to connect to model service. Please try again.")
+        raise gr.Error("Failed to connect to model service. Please try again.") from None
     except Exception as e:
         logger.error(f"Unexpected error during image processing: {e}", exc_info=True)
         clear_gpu_memory()
-        raise gr.Error("An unexpected error occurred. Please try again.")
+        raise gr.Error("An unexpected error occurred. Please try again.") from None
 
 
 def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
@@ -146,7 +145,7 @@ def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
 
 @timed
 def create_image_sdxl(
-    image_pil: Optional[Image.Image],
+    image_pil: Image.Image | None,
     prompt: str,
     n_prompt: str,
     scale: float,
@@ -155,7 +154,7 @@ def create_image_sdxl(
     num_inference_steps: int,
     seed: int,
     target: str = "Load only style blocks",
-) -> Optional[str]:
+) -> str | None:
     """Create an image using SDXL via remote API.
 
     Args:
@@ -204,10 +203,10 @@ def create_image_sdxl(
 
     except (ConnectionError, TimeoutError) as e:
         logger.error(f"SDXL connection error: {e}")
-        raise gr.Error("Failed to connect to SDXL service. Please try again.")
+        raise gr.Error("Failed to connect to SDXL service. Please try again.") from None
     except Exception as e:
         logger.error(f"SDXL error: {e}", exc_info=True)
-        raise gr.Error(f"SDXL generation failed: {e}")
+        raise gr.Error(f"SDXL generation failed: {e}") from None
     finally:
         # Clean up temporary file
         if temp_file is not None:
@@ -267,7 +266,6 @@ article = r"""
 """
 
 with gr.Blocks(css=css) as demo:
-
     gr.Markdown(title, elem_classes="center-markdown")
     gr.Markdown(description, elem_classes="center-markdown")
 
